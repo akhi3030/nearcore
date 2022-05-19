@@ -7,6 +7,7 @@ use std::time::{Duration, Instant};
 
 use near_primitives::time::Clock;
 use tracing::{debug, error, info, trace, warn};
+use borsh::BorshSerialize;
 
 use near_chain::chain::{
     ApplyStatePartsRequest, BlockCatchUpRequest, BlockMissingChunks, BlocksCatchUpState,
@@ -24,7 +25,7 @@ use near_network::types::{
     FullPeerInfo, NetworkClientResponses, NetworkRequests, PeerManagerAdapter,
 };
 use near_primitives::block::{Approval, ApprovalInner, ApprovalMessage, Block, BlockHeader, Tip};
-use near_primitives::challenge::{Challenge, ChallengeBody};
+use near_primitives::challenge::{Challenge, ChallengeBody, BlockDoubleSign};
 use near_primitives::hash::CryptoHash;
 use near_primitives::merkle::{merklize, MerklePath};
 use near_primitives::receipt::Receipt;
@@ -539,6 +540,12 @@ impl Client {
         let next_epoch_protocol_version =
             self.runtime_adapter.get_epoch_protocol_version(&next_epoch_id)?;
 
+        let challenge_body = ChallengeBody::BlockDoubleSign(BlockDoubleSign {
+            left_block_header: prev_block.header().try_to_vec().unwrap(),
+            right_block_header: prev_block.header().try_to_vec().unwrap(),
+        });
+        let challenge = Challenge::produce(challenge_body, &*validator_signer);
+
         let block = Block::produce(
             this_epoch_protocol_version,
             next_epoch_protocol_version,
@@ -555,7 +562,7 @@ impl Client {
             max_gas_price,
             minted_amount,
             prev_block_extra.challenges_result,
-            vec![],
+            vec![challenge],
             &*validator_signer,
             next_bp_hash,
             block_merkle_root,

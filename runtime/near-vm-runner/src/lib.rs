@@ -19,7 +19,6 @@ mod wasmer_runner;
 mod wasmtime_runner;
 
 pub use near_vm_errors::VMError;
-pub use near_vm_logic::with_ext_cost_counter;
 
 pub use cache::{
     get_contract_cache_key, precompile_contract, precompile_contract_vm, MockCompiledContractCache,

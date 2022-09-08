@@ -50,7 +50,6 @@ use near_store::{
 use near_store::{set_access_key, set_code};
 use near_vm_logic::types::PromiseResult;
 use near_vm_logic::ReturnData;
-pub use near_vm_runner::with_ext_cost_counter;
 
 use crate::actions::*;
 use crate::balance_checker::check_balance;

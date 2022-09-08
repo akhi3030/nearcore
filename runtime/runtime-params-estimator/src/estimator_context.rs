@@ -1,3 +1,4 @@
+use near_primitives::profile::ProfileData;
 use near_primitives::shard_layout::ShardUId;
 use std::collections::HashMap;
 
@@ -88,6 +89,8 @@ impl Testbed<'_> {
         let mut res = Vec::with_capacity(blocks.len());
 
         for block in blocks {
+            unimplemented!();
+            /*
             node_runtime::with_ext_cost_counter(|cc| cc.clear());
             let extra_blocks;
             let gas_cost = {
@@ -106,6 +109,7 @@ impl Testbed<'_> {
                 }
             });
             res.push((gas_cost, ext_costs));
+            */
         }
 
         res

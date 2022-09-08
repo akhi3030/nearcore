@@ -181,11 +181,6 @@ impl GasCounter {
     }
 
     #[inline]
-    fn inc_ext_costs_counter(&mut self, cost: ExtCosts, value: u64) {
-        with_ext_cost_counter(|cc| *cc.entry(cost).or_default() += value)
-    }
-
-    #[inline]
     fn update_profile_host(&mut self, cost: ExtCosts, value: u64) {
         self.profile.add_ext_cost(cost, value)
     }
@@ -201,7 +196,6 @@ impl GasCounter {
             .checked_mul(cost.value(&self.ext_costs_config))
             .ok_or(HostError::IntegerOverflow)?;
 
-        self.inc_ext_costs_counter(cost, num);
         self.update_profile_host(cost, use_gas);
         self.burn_gas(use_gas)
     }
@@ -209,7 +203,6 @@ impl GasCounter {
     /// A helper function to pay base cost gas.
     pub fn pay_base(&mut self, cost: ExtCosts) -> Result<()> {
         let base_fee = cost.value(&self.ext_costs_config);
-        self.inc_ext_costs_counter(cost, 1);
         self.update_profile_host(cost, base_fee);
         self.burn_gas(base_fee)
     }

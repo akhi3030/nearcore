@@ -98,7 +98,7 @@ pub enum ShardLayoutError {
 impl ShardLayout {
     /* Some constructors */
     pub fn v0_single_shard() -> Self {
-        Self::v0(1, 0)
+        Self::v0(NumShards(1), 0)
     }
 
     /// Return a V0 Shardlayout
@@ -114,12 +114,12 @@ impl ShardLayout {
     ) -> Self {
         let to_parent_shard_map = if let Some(shards_split_map) = &shards_split_map {
             let mut to_parent_shard_map = HashMap::new();
-            let num_shards = (boundary_accounts.len() + 1) as NumShards;
+            let num_shards = NumShards(boundary_accounts.len() as u64 + 1);
             for (parent_shard_id, shard_ids) in shards_split_map.iter().enumerate() {
                 for &shard_id in shard_ids {
                     let prev = to_parent_shard_map.insert(shard_id, parent_shard_id as ShardId);
                     assert!(prev.is_none(), "no shard should appear in the map twice");
-                    assert!(shard_id < num_shards, "shard id should be valid");
+                    assert!(shard_id < num_shards.0, "shard id should be valid");
                 }
             }
             Some((0..num_shards).map(|shard_id| to_parent_shard_map[&shard_id]).collect())
@@ -219,17 +219,19 @@ impl ShardLayout {
     fn num_shards(&self) -> NumShards {
         match self {
             Self::V0(v0) => v0.num_shards,
-            Self::V1(v1) => (v1.boundary_accounts.len() + 1) as NumShards,
+            Self::V1(v1) => NumShards(v1.boundary_accounts.len() as u64 + 1),
         }
     }
 
     pub fn shard_ids(&self) -> impl Iterator<Item = ShardId> {
-        0..self.num_shards()
+        0..(self.num_shards().0 as ShardId)
     }
 
     /// Returns shard uids for all shards in the shard layout
     pub fn get_shard_uids(&self) -> Vec<ShardUId> {
-        (0..self.num_shards()).map(|x| ShardUId::from_shard_id_and_layout(x, self)).collect()
+        (0..(self.num_shards().0 as ShardId))
+            .map(|x| ShardUId::from_shard_id_and_layout(x, self))
+            .collect()
     }
 }
 
@@ -241,7 +243,7 @@ pub fn account_id_to_shard_id(account_id: &AccountId, shard_layout: &ShardLayout
         ShardLayout::V0(ShardLayoutV0 { num_shards, .. }) => {
             let hash = CryptoHash::hash_bytes(account_id.as_bytes());
             let (bytes, _) = stdx::split_array::<32, 8, 24>(hash.as_bytes());
-            u64::from_le_bytes(*bytes) % num_shards
+            u64::from_le_bytes(*bytes) % num_shards.0
         }
         ShardLayout::V1(ShardLayoutV1 { boundary_accounts, .. }) => {
             // Note: As we scale up the number of shards we can consider
@@ -302,7 +304,7 @@ impl ShardUId {
 
     /// Constructs a shard uid from shard id and a shard layout
     pub fn from_shard_id_and_layout(shard_id: ShardId, shard_layout: &ShardLayout) -> Self {
-        assert!(shard_id < shard_layout.num_shards());
+        assert!(shard_id < shard_layout.num_shards().0);
         Self { shard_id: shard_id as u32, version: shard_layout.version() }
     }
 
@@ -451,7 +453,7 @@ impl<'de> serde::de::Visitor<'de> for ShardUIdVisitor {
 #[cfg(test)]
 mod tests {
     use crate::shard_layout::{account_id_to_shard_id, ShardLayout, ShardLayoutV1, ShardUId};
-    use near_primitives_core::types::{AccountId, ShardId};
+    use near_primitives_core::types::{AccountId, NumShards, ShardId};
     use rand::distributions::Alphanumeric;
     use rand::rngs::StdRng;
     use rand::{Rng, SeedableRng};
@@ -480,7 +482,7 @@ mod tests {
 
     #[test]
     fn test_shard_layout_v0() {
-        let num_shards = 4;
+        let num_shards = NumShards(4);
         let shard_layout = ShardLayout::v0(num_shards, 0);
         let mut shard_id_distribution: HashMap<_, _> =
             (0..num_shards).map(|x| (x, 0)).into_iter().collect();

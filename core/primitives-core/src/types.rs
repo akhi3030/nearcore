@@ -34,8 +34,11 @@ pub struct GasWeight(pub u64);
 
 /// Number of blocks in current group.
 pub type NumBlocks = u64;
+
 /// Number of shards in current group.
-pub type NumShards = u64;
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct NumShards(pub u64);
+
 /// Number of seats of validators (block producer or hidden ones) in current group (settlement).
 pub type NumSeats = u64;
 /// Block height delta that measures the difference between `BlockHeight`s.

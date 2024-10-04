@@ -133,7 +133,7 @@ fn test_reads_with_incomplete_storage() {
             let trie_update_keys = |trie: Trie| -> Result<_, StorageError> {
                 let trie_update = TrieUpdate::new(trie);
                 let keys = trie_update.iter(key_prefix)?.collect::<Result<Vec<_>, _>>()?;
-                Ok((trie_update.trie, keys))
+                Ok((trie_update.take_trie(), keys))
             };
             test_incomplete_storage(get_trie(), trie_update_keys);
         }

@@ -847,7 +847,7 @@ impl RuntimeAdapter for NightshadeRuntime {
 
             // Checking feature WitnessTransactionLimits
             if ProtocolFeature::StatelessValidation.enabled(protocol_version)
-                && state_update.trie.recorded_storage_size()
+                && state_update.trie().recorded_storage_size()
                     > runtime_config
                         .witness_config
                         .new_transactions_validation_state_size_soft_limit
@@ -938,7 +938,7 @@ impl RuntimeAdapter for NightshadeRuntime {
         metrics::CONGESTION_PREPARE_TX_GAS_LIMIT
             .with_label_values(&[&shard_label])
             .set(i64::try_from(transactions_gas_limit).unwrap_or(i64::MAX));
-        result.storage_proof = state_update.trie.recorded_storage().map(|s| s.nodes);
+        result.storage_proof = state_update.trie().recorded_storage().map(|s| s.nodes);
         Ok(result)
     }
 

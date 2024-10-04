@@ -199,7 +199,7 @@ impl ReceiptSinkV2<'_> {
     ) -> Result<(), RuntimeError> {
         let mut num_forwarded = 0;
         for receipt_result in
-            self.outgoing_buffers.to_shard(shard_id).iter(&state_update.trie, true)
+            self.outgoing_buffers.to_shard(shard_id).iter(state_update.trie(), true)
         {
             let receipt = receipt_result?;
             let gas = receipt_congestion_gas(&receipt, &apply_state.config)?;

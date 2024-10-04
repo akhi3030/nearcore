@@ -1465,7 +1465,7 @@ impl Runtime {
         )?;
         let mut receipt_sink = ReceiptSink::new(
             processing_state.protocol_version,
-            &processing_state.state_update.trie,
+            processing_state.state_update.trie(),
             apply_state,
             &mut own_congestion_info,
             &mut outgoing_receipts,
@@ -1682,7 +1682,7 @@ impl Runtime {
         for receipt in local_receipts.iter() {
             if processing_state.total.compute >= compute_limit
                 || proof_size_limit.is_some_and(|limit| {
-                    processing_state.state_update.trie.recorded_storage_size_upper_bound() > limit
+                    processing_state.state_update.trie().recorded_storage_size_upper_bound() > limit
                 })
             {
                 processing_state.delayed_receipts.push(
@@ -1758,7 +1758,7 @@ impl Runtime {
         while processing_state.delayed_receipts.len() > 0 {
             if processing_state.total.compute >= compute_limit
                 || proof_size_limit.is_some_and(|limit| {
-                    processing_state.state_update.trie.recorded_storage_size_upper_bound() > limit
+                    processing_state.state_update.trie().recorded_storage_size_upper_bound() > limit
                 })
             {
                 break;
@@ -1865,7 +1865,7 @@ impl Runtime {
             .map_err(RuntimeError::ReceiptValidationError)?;
             if processing_state.total.compute >= compute_limit
                 || proof_size_limit.is_some_and(|limit| {
-                    processing_state.state_update.trie.recorded_storage_size_upper_bound() > limit
+                    processing_state.state_update.trie().recorded_storage_size_upper_bound() > limit
                 })
             {
                 processing_state.delayed_receipts.push(
@@ -1969,7 +1969,7 @@ impl Runtime {
                 .with_label_values(&[shard_id_str.as_str(), "compute_limit"])
                 .inc();
         } else if proof_size_limit.is_some_and(|limit| {
-            processing_state.state_update.trie.recorded_storage_size_upper_bound() > limit
+            processing_state.state_update.trie().recorded_storage_size_upper_bound() > limit
         }) {
             metrics::CHUNK_RECEIPTS_LIMITED_BY
                 .with_label_values(&[shard_id_str.as_str(), "storage_proof_size_limit"])
@@ -2042,7 +2042,7 @@ impl Runtime {
         state_update.commit(StateChangeCause::UpdatedDelayedReceipts);
         self.apply_state_patch(&mut state_update, state_patch);
         let chunk_recorded_size_upper_bound =
-            state_update.trie.recorded_storage_size_upper_bound() as f64;
+            state_update.trie().recorded_storage_size_upper_bound() as f64;
         let shard_id_str = apply_state.shard_id.to_string();
         metrics::CHUNK_RECORDED_SIZE_UPPER_BOUND
             .with_label_values(&[shard_id_str.as_str()])
@@ -2237,8 +2237,9 @@ fn resolve_promise_yield_timeouts(
     let yield_processing_start = std::time::Instant::now();
     while promise_yield_indices.first_index < promise_yield_indices.next_available_index {
         if total.compute >= compute_limit
-            || proof_size_limit
-                .is_some_and(|limit| state_update.trie.recorded_storage_size_upper_bound() > limit)
+            || proof_size_limit.is_some_and(|limit| {
+                state_update.trie().recorded_storage_size_upper_bound() > limit
+            })
         {
             break;
         }
@@ -2404,7 +2405,7 @@ impl<'a> ApplyProcessingState<'a> {
             Arc::clone(&self.apply_state.config),
             self.apply_state.cache.as_ref().map(|v| v.handle()),
             self.apply_state.current_protocol_version,
-            self.state_update.contract_storage.clone(),
+            self.state_update.contract_storage().clone(),
         );
         ApplyProcessingReceiptState {
             pipeline_manager,
@@ -2586,14 +2587,14 @@ pub mod estimator {
         let mut receipt_sink = ReceiptSink::V2(ReceiptSinkV2 {
             own_congestion_info: &mut congestion_info,
             outgoing_limit,
-            outgoing_buffers: ShardsOutgoingReceiptBuffer::load(&state_update.trie)?,
+            outgoing_buffers: ShardsOutgoingReceiptBuffer::load(state_update.trie())?,
             outgoing_receipts,
         });
         let empty_pipeline = ReceiptPreparationPipeline::new(
             std::sync::Arc::clone(&apply_state.config),
             apply_state.cache.as_ref().map(|c| c.handle()),
             apply_state.current_protocol_version,
-            state_update.contract_storage.clone(),
+            state_update.contract_storage().clone(),
         );
         Runtime {}.apply_action_receipt(
             state_update,

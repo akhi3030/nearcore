@@ -26,8 +26,8 @@ pub type TrieUpdates = BTreeMap<Vec<u8>, TrieKeyValueUpdate>;
 /// Provides a way to access Storage and record changes with future commit.
 /// TODO (#7327): rename to StateUpdate
 pub struct TrieUpdate {
-    pub trie: Trie,
-    pub contract_storage: ContractStorage,
+    trie: Trie,
+    contract_storage: ContractStorage,
     committed: RawStateChanges,
     prospective: TrieUpdates,
 }
@@ -66,6 +66,15 @@ impl TrieUpdate {
 
     pub fn trie(&self) -> &Trie {
         &self.trie
+    }
+
+    #[cfg(test)]
+    pub fn take_trie(self) -> Trie {
+        self.trie
+    }
+
+    pub fn contract_storage(&self) -> &ContractStorage {
+        &self.contract_storage
     }
 
     pub fn get_ref(

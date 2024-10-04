@@ -183,7 +183,7 @@ pub(crate) fn action_function_call(
         )
         .into());
     }
-    state_update.trie.request_code_recording(account_id.clone());
+    state_update.trie().request_code_recording(account_id.clone());
     #[cfg(feature = "test_features")]
     apply_recorded_storage_garbage(function_call, state_update);
 
@@ -638,7 +638,7 @@ pub(crate) fn action_deploy_contract(
     // Inform the `store::contract::Storage` about the new deploy (so that the `get` method can
     // return the contract before the contract is written out to the underlying storage as part of
     // the `TrieUpdate` commit.)
-    state_update.contract_storage.store(code);
+    state_update.contract_storage().store(code);
     Ok(())
 }
 

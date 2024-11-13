@@ -1095,7 +1095,8 @@ impl EpochManager {
     ) -> Result<Vec<AccountId>, EpochError> {
         let epoch_info = self.get_epoch_info(&epoch_id)?;
 
-        let shard_layout = self.get_shard_layout(&epoch_id)?;
+        let protocol_version = self.get_epoch_info(&epoch_id)?.protocol_version();
+        let shard_layout = self.get_shard_layout(protocol_version);
         let shard_index = shard_layout.get_shard_index(shard_id)?;
 
         let chunk_producers_settlement = epoch_info.chunk_producers_settlement();
@@ -1123,7 +1124,8 @@ impl EpochManager {
         }
 
         let epoch_info = self.get_epoch_info(epoch_id)?;
-        let shard_layout = self.get_shard_layout(epoch_id)?;
+        let protocol_version = self.get_epoch_info(&epoch_id)?.protocol_version();
+        let shard_layout = self.get_shard_layout(protocol_version);
         let chunk_validators_per_shard = epoch_info.sample_chunk_validators(height);
         for (shard_index, chunk_validators) in chunk_validators_per_shard.into_iter().enumerate() {
             let chunk_validators = chunk_validators
@@ -1195,7 +1197,8 @@ impl EpochManager {
         key: &ChunkProductionKey,
     ) -> Result<ValidatorStake, EpochError> {
         let epoch_info = self.get_epoch_info(&key.epoch_id)?;
-        let shard_layout = self.get_shard_layout(&key.epoch_id)?;
+        let protocol_version = self.get_epoch_info(&key.epoch_id)?.protocol_version();
+        let shard_layout = self.get_shard_layout(protocol_version);
         let validator_id = Self::chunk_producer_from_info(
             &epoch_info,
             &shard_layout,
@@ -1261,7 +1264,8 @@ impl EpochManager {
     ) -> Result<bool, EpochError> {
         let epoch_info = self.get_epoch_info(&epoch_id)?;
 
-        let shard_layout = self.get_shard_layout(&epoch_id)?;
+        let protocol_version = self.get_epoch_info(&epoch_id)?.protocol_version();
+        let shard_layout = self.get_shard_layout(protocol_version);
         let shard_index = shard_layout.get_shard_index(shard_id)?;
 
         let chunk_producers_settlement = epoch_info.chunk_producers_settlement();
@@ -1297,7 +1301,8 @@ impl EpochManager {
     ) -> Result<bool, EpochError> {
         let next_epoch_id = self.get_next_epoch_id_from_prev_block(parent_hash)?;
         if self.will_shard_layout_change(parent_hash)? {
-            let shard_layout = self.get_shard_layout(&next_epoch_id)?;
+            let protocol_version = self.get_epoch_info(&next_epoch_id)?.protocol_version();
+            let shard_layout = self.get_shard_layout(protocol_version);
             let split_shards = shard_layout
                 .get_children_shards_ids(shard_id)
                 .expect("all shard layouts expect the first one must have a split map");
@@ -1491,7 +1496,8 @@ impl EpochManager {
         // in std.
         let (current_validators, next_epoch_id, all_proposals) = match &epoch_identifier {
             ValidatorInfoIdentifier::EpochId(id) => {
-                let cur_shard_layout = self.get_shard_layout(&epoch_id)?;
+                let protocol_version = self.get_epoch_info(&epoch_id)?.protocol_version();
+                let cur_shard_layout = self.get_shard_layout(protocol_version);
                 let mut validator_to_shard = (0..cur_epoch_info.validators_len())
                     .map(|_| HashSet::default())
                     .collect::<Vec<HashSet<ShardId>>>();
@@ -1670,7 +1676,8 @@ impl EpochManager {
         };
 
         let next_epoch_info = self.get_epoch_info(&next_epoch_id)?;
-        let next_shard_layout = self.get_shard_layout(&next_epoch_id)?;
+        let next_protocol_version = self.get_epoch_info(&next_epoch_id)?.protocol_version();
+        let next_shard_layout = self.get_shard_layout(next_protocol_version);
         let mut next_validator_to_shard = (0..next_epoch_info.validators_len())
             .map(|_| HashSet::default())
             .collect::<Vec<HashSet<ShardId>>>();
@@ -1845,17 +1852,17 @@ impl EpochManager {
         self.config.for_protocol_version(protocol_version)
     }
 
-    pub fn get_shard_layout(&self, epoch_id: &EpochId) -> Result<ShardLayout, EpochError> {
-        let protocol_version = self.get_epoch_info(epoch_id)?.protocol_version();
-        let shard_layout = self.config.for_protocol_version(protocol_version).shard_layout;
-        Ok(shard_layout)
+    pub fn get_shard_layout(&self, protocol_version: ProtocolVersion) -> ShardLayout {
+        self.config.for_protocol_version(protocol_version).shard_layout
     }
 
     pub fn will_shard_layout_change(&self, parent_hash: &CryptoHash) -> Result<bool, EpochError> {
-        let epoch_id = self.get_epoch_id_from_prev_block(parent_hash)?;
+        let current_epoch_id = self.get_epoch_id_from_prev_block(parent_hash)?;
+        let current_protocol_version = self.get_epoch_info(&current_epoch_id)?.protocol_version();
         let next_epoch_id = self.get_next_epoch_id_from_prev_block(parent_hash)?;
-        let shard_layout = self.get_shard_layout(&epoch_id)?;
-        let next_shard_layout = self.get_shard_layout(&next_epoch_id)?;
+        let next_protocol_version = self.get_epoch_info(&next_epoch_id)?.protocol_version();
+        let shard_layout = self.get_shard_layout(current_protocol_version);
+        let next_shard_layout = self.get_shard_layout(next_protocol_version);
         Ok(shard_layout != next_shard_layout)
     }
 
@@ -2063,7 +2070,8 @@ impl EpochManager {
 
         let epoch_id = *self.get_block_info(block_hash)?.epoch_id();
         let epoch_info = self.get_epoch_info(&epoch_id)?;
-        let shard_layout = self.get_shard_layout(&epoch_id)?;
+        let protocol_version = self.get_epoch_info(&epoch_id)?.protocol_version();
+        let shard_layout = self.get_shard_layout(protocol_version);
 
         let mut aggregator = EpochInfoAggregator::new(epoch_id, *block_hash);
         let mut cur_hash = *block_hash;

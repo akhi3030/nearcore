@@ -90,7 +90,9 @@ impl AnalyzeContractSizesCommand {
         let epoch_manager =
             EpochManager::new_from_genesis_config(store.clone(), &near_config.genesis.config)
                 .unwrap();
-        let shard_layout = epoch_manager.get_shard_layout(&head.epoch_id).unwrap();
+        let protocol_version =
+            epoch_manager.get_epoch_info(&head.epoch_id).unwrap().protocol_version();
+        let shard_layout = epoch_manager.get_shard_layout(protocol_version);
 
         let mut stats = ContractSizeStats::new(self.topn);
         for shard_uid in shard_layout.shard_uids() {

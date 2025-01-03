@@ -118,7 +118,9 @@ fn export_postponed_receipt_count(near_config: &NearConfig, store: &Store) -> an
 
     let head = chain_store.final_head()?;
     let block = chain_store.get_block(&head.last_block_hash)?;
-    let shard_layout = epoch_manager.get_shard_layout(block.header().epoch_id())?;
+    let protocol_version =
+        epoch_manager.get_epoch_info(block.header().epoch_id())?.protocol_version();
+    let shard_layout = epoch_manager.get_shard_layout(protocol_version);
 
     for chunk_header in block.chunks().iter_deprecated() {
         let shard_id = chunk_header.shard_id();

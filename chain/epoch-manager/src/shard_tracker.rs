@@ -349,7 +349,9 @@ mod tests {
         let shard_ids = (0..4).map(ShardId::new).collect_vec();
         let epoch_manager =
             get_epoch_manager(PROTOCOL_VERSION, shard_ids.len() as NumShards, false);
-        let shard_layout = epoch_manager.read().get_shard_layout(&EpochId::default()).unwrap();
+        let protocol_version =
+            epoch_manager.read().get_epoch_info(&EpochId::default()).unwrap().protocol_version();
+        let shard_layout = epoch_manager.read().get_shard_layout(protocol_version);
         let tracked_accounts = vec!["test1".parse().unwrap(), "test2".parse().unwrap()];
         let tracker =
             ShardTracker::new(TrackedConfig::Accounts(tracked_accounts), Arc::new(epoch_manager));

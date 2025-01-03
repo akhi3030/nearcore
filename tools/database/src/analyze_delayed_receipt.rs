@@ -56,7 +56,9 @@ impl AnalyzeDelayedReceiptCommand {
                 .unwrap();
 
         let tip = chain_store.head().unwrap();
-        let shard_layout = epoch_manager.get_shard_layout(&tip.epoch_id).unwrap();
+        let protocol_version =
+            epoch_manager.get_epoch_info(&tip.epoch_id).unwrap().protocol_version();
+        let shard_layout = epoch_manager.get_shard_layout(protocol_version);
         let shard_uids = shard_layout.shard_uids().collect::<Vec<_>>();
         let shard_tries = ShardTries::new(
             store.trie_store(),
@@ -94,7 +96,9 @@ impl AnalyzeDelayedReceiptCommand {
                 first_analysed_block = Some((block.header().height(), *block.hash()));
             }
             last_analysed_block = Some((block.header().height(), *block.hash()));
-            let shard_layout = epoch_manager.get_shard_layout(block.header().epoch_id()).unwrap();
+            let protocol_version =
+                epoch_manager.get_epoch_info(block.header().epoch_id()).unwrap().protocol_version();
+            let shard_layout = epoch_manager.get_shard_layout(protocol_version);
 
             for chunk_header in block.chunks().iter_deprecated() {
                 let state_root = chunk_header.prev_state_root();

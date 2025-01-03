@@ -109,8 +109,8 @@ impl NightshadeRuntime {
         );
         if let Err(err) = tries.maybe_open_state_snapshot(|prev_block_hash: CryptoHash| {
             let epoch_manager = epoch_manager.read();
-            let epoch_id = epoch_manager.get_epoch_id(&prev_block_hash)?;
-            let shard_layout = epoch_manager.get_shard_layout(&epoch_id)?;
+            let epoch_info = epoch_manager.get_epoch_info_from_hash(&prev_block_hash)?;
+            let shard_layout = epoch_manager.get_shard_layout(epoch_info.protocol_version());
             Ok(shard_layout.shard_uids().enumerate().collect())
         }) {
             tracing::debug!(target: "runtime", ?err, "The state snapshot is not available.");
@@ -138,7 +138,8 @@ impl NightshadeRuntime {
     ) -> Result<ShardUId, Error> {
         let epoch_manager = self.epoch_manager.read();
         let epoch_id = epoch_manager.get_epoch_id_from_prev_block(prev_hash)?;
-        let shard_version = epoch_manager.get_shard_layout(&epoch_id)?.version();
+        let epoch_info = epoch_manager.get_epoch_info(&epoch_id)?;
+        let shard_version = epoch_manager.get_shard_layout(epoch_info.protocol_version()).version();
         Ok(ShardUId::new(shard_version, shard_id))
     }
 
@@ -148,7 +149,9 @@ impl NightshadeRuntime {
         epoch_id: &EpochId,
     ) -> Result<ShardUId, Error> {
         let epoch_manager = self.epoch_manager.read();
-        let shard_version = epoch_manager.get_shard_layout(epoch_id)?.version();
+        let shard_version = epoch_manager
+            .get_shard_layout(epoch_manager.get_epoch_info(epoch_id)?.protocol_version())
+            .version();
         Ok(ShardUId::new(shard_version, shard_id))
     }
 
@@ -158,7 +161,8 @@ impl NightshadeRuntime {
         epoch_id: &EpochId,
     ) -> Result<ShardUId, Error> {
         let epoch_manager = self.epoch_manager.read();
-        let shard_layout = epoch_manager.get_shard_layout(epoch_id)?;
+        let shard_layout = epoch_manager
+            .get_shard_layout(epoch_manager.get_epoch_info(epoch_id)?.protocol_version());
         let shard_id = shard_layout.account_id_to_shard_id(account_id);
         Ok(ShardUId::from_shard_id_and_layout(shard_id, &shard_layout))
     }
@@ -196,7 +200,8 @@ impl NightshadeRuntime {
         let epoch_id = self.epoch_manager.get_epoch_id_from_prev_block(prev_block_hash)?;
         let validator_accounts_update = {
             let epoch_manager = self.epoch_manager.read();
-            let shard_layout = epoch_manager.get_shard_layout(&epoch_id)?;
+            let shard_layout = epoch_manager
+                .get_shard_layout(epoch_manager.get_epoch_info(&epoch_id)?.protocol_version());
             debug!(target: "runtime",
                    next_block_epoch_start = epoch_manager.is_next_block_epoch_start(prev_block_hash).unwrap()
             );

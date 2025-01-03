@@ -474,7 +474,8 @@ impl EpochManagerAdapter for EpochManagerHandle {
 
     fn shard_ids(&self, epoch_id: &EpochId) -> Result<Vec<ShardId>, EpochError> {
         let epoch_manager = self.read();
-        Ok(epoch_manager.get_shard_layout(epoch_id)?.shard_ids().collect())
+        let protocol_version = epoch_manager.get_epoch_info(epoch_id)?.protocol_version();
+        Ok(epoch_manager.get_shard_layout(protocol_version).shard_ids().collect())
     }
 
     fn num_total_parts(&self) -> usize {
@@ -509,7 +510,8 @@ impl EpochManagerAdapter for EpochManagerHandle {
         epoch_id: &EpochId,
     ) -> Result<ShardId, EpochError> {
         let epoch_manager = self.read();
-        let shard_layout = epoch_manager.get_shard_layout(epoch_id)?;
+        let protocol_version = epoch_manager.get_epoch_info(epoch_id)?.protocol_version();
+        let shard_layout = epoch_manager.get_shard_layout(protocol_version);
         Ok(shard_layout.account_id_to_shard_id(account_id))
     }
 
@@ -519,7 +521,8 @@ impl EpochManagerAdapter for EpochManagerHandle {
         epoch_id: &EpochId,
     ) -> Result<ShardUIdAndIndex, EpochError> {
         let epoch_manager = self.read();
-        let shard_layout = epoch_manager.get_shard_layout(epoch_id)?;
+        let protocol_version = epoch_manager.get_epoch_info(epoch_id)?.protocol_version();
+        let shard_layout = epoch_manager.get_shard_layout(protocol_version);
         let shard_id = shard_layout.account_id_to_shard_id(account_id);
         let shard_uid = ShardUId::from_shard_id_and_layout(shard_id, &shard_layout);
         let shard_index = shard_layout.get_shard_index(shard_id)?;
@@ -532,7 +535,8 @@ impl EpochManagerAdapter for EpochManagerHandle {
         epoch_id: &EpochId,
     ) -> Result<ShardUId, EpochError> {
         let epoch_manager = self.read();
-        let shard_layout = epoch_manager.get_shard_layout(epoch_id)?;
+        let protocol_version = epoch_manager.get_epoch_info(epoch_id)?.protocol_version();
+        let shard_layout = epoch_manager.get_shard_layout(protocol_version);
         Ok(ShardUId::from_shard_id_and_layout(shard_id, &shard_layout))
     }
 
@@ -542,7 +546,8 @@ impl EpochManagerAdapter for EpochManagerHandle {
         epoch_id: &EpochId,
     ) -> Result<ShardIndex, EpochError> {
         let epoch_manager = self.read();
-        let shard_layout = epoch_manager.get_shard_layout(epoch_id)?;
+        let protocol_version = epoch_manager.get_epoch_info(epoch_id)?.protocol_version();
+        let shard_layout = epoch_manager.get_shard_layout(protocol_version);
         Ok(shard_layout.get_shard_index(shard_id)?)
     }
 
@@ -564,7 +569,8 @@ impl EpochManagerAdapter for EpochManagerHandle {
 
     fn get_shard_layout(&self, epoch_id: &EpochId) -> Result<ShardLayout, EpochError> {
         let epoch_manager = self.read();
-        epoch_manager.get_shard_layout(epoch_id)
+        let protocol_version = epoch_manager.get_epoch_info(epoch_id)?.protocol_version();
+        Ok(epoch_manager.get_shard_layout(protocol_version))
     }
 
     fn get_shard_config(&self, epoch_id: &EpochId) -> Result<ShardConfig, EpochError> {

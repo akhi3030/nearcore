@@ -743,7 +743,9 @@ pub(crate) fn view_chain(
     };
     let epoch_manager = EpochManager::new_from_genesis_config(store, &near_config.genesis.config)
         .expect("Failed to start Epoch Manager");
-    let shard_layout = epoch_manager.get_shard_layout(block.header().epoch_id()).unwrap();
+    let protocol_version =
+        epoch_manager.get_epoch_info(block.header().epoch_id()).unwrap().protocol_version();
+    let shard_layout = epoch_manager.get_shard_layout(protocol_version);
 
     let mut chunk_extras = vec![];
     let mut chunks = vec![];

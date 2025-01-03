@@ -885,7 +885,8 @@ fn test_reward_multiple_shards() {
     for height in 1..(2 * epoch_length) {
         let i = height as usize;
         let epoch_id = epoch_manager.get_epoch_id_from_prev_block(&h[i - 1]).unwrap();
-        let shard_layout = epoch_manager.get_shard_layout(&epoch_id).unwrap();
+        let protocol_version = epoch_manager.get_epoch_info(&epoch_id).unwrap().protocol_version();
+        let shard_layout = epoch_manager.get_shard_layout(protocol_version);
         // test1 skips its chunks in the first epoch
         let chunk_mask = shard_layout
             .shard_ids()
@@ -1098,7 +1099,7 @@ fn test_expected_chunks_prev_block_not_produced() {
         let height = i as u64;
         let epoch_id = epoch_manager.get_epoch_id_from_prev_block(&prev_block).unwrap();
         let epoch_info = epoch_manager.get_epoch_info(&epoch_id).unwrap().clone();
-        let shard_layout = epoch_manager.get_shard_layout(&epoch_id).unwrap();
+        let shard_layout = epoch_manager.get_shard_layout(epoch_info.protocol_version());
         let block_producer = EpochManager::block_producer_from_info(&epoch_info, height);
         let prev_block_info = epoch_manager.get_block_info(&prev_block).unwrap();
         let prev_height = prev_block_info.height();
@@ -1503,7 +1504,7 @@ fn test_chunk_producer_kickout() {
         let height = height as u64;
         let epoch_id = em.get_epoch_id_from_prev_block(prev_block).unwrap();
         let epoch_info = em.get_epoch_info(&epoch_id).unwrap().clone();
-        let shard_layout = em.get_shard_layout(&epoch_id).unwrap();
+        let shard_layout = em.get_shard_layout(epoch_info.protocol_version());
         let chunk_mask = (0..4)
             .map(|shard_index| {
                 if height >= epoch_length {
@@ -1653,7 +1654,8 @@ fn test_chunk_validator_kickout_using_endorsement_stats() {
     for (prev_block, (height, curr_block)) in hashes.iter().zip(hashes.iter().enumerate().skip(1)) {
         let height = height as u64;
         let epoch_id = em.get_epoch_id_from_prev_block(prev_block).unwrap();
-        let shard_layout = em.get_shard_layout(&epoch_id).unwrap();
+        let protocol_version = em.get_epoch_info(&epoch_id).unwrap().protocol_version();
+        let shard_layout = em.get_shard_layout(protocol_version);
         // All chunks are produced.
         let chunk_mask = vec![true; num_shards as usize];
         // Prepare the chunk endorsements so that "test2" misses some of the endorsements.
@@ -2298,13 +2300,18 @@ fn test_protocol_version_switch_with_shard_layout_change() {
         epoch_manager.get_epoch_info(&epochs[1]).unwrap().protocol_version(),
         new_protocol_version - 1
     );
-    assert_eq!(epoch_manager.get_shard_layout(&epochs[1]).unwrap(), ShardLayout::single_shard());
+    assert_eq!(
+        epoch_manager
+            .get_shard_layout(epoch_manager.get_epoch_info(&epochs[1]).unwrap().protocol_version()),
+        ShardLayout::single_shard()
+    );
     assert_eq!(
         epoch_manager.get_epoch_info(&epochs[2]).unwrap().protocol_version(),
         new_protocol_version
     );
     assert_eq!(
-        epoch_manager.get_shard_layout(&epochs[2]).unwrap(),
+        epoch_manager
+            .get_shard_layout(epoch_manager.get_epoch_info(&epochs[2]).unwrap().protocol_version()),
         ShardLayout::get_simple_nightshade_layout()
     );
 

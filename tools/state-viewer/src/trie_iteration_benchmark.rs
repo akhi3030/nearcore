@@ -115,7 +115,9 @@ impl TrieIterationBenchmarkCmd {
         let block = chain_store.get_block(&head.last_block_hash).unwrap();
         let epoch_manager =
             EpochManager::new_from_genesis_config(store.clone(), &genesis_config).unwrap();
-        let shard_layout = epoch_manager.get_shard_layout(block.header().epoch_id()).unwrap();
+        let protocol_version =
+            epoch_manager.get_epoch_info(block.header().epoch_id()).unwrap().protocol_version();
+        let shard_layout = epoch_manager.get_shard_layout(protocol_version);
 
         for (shard_index, chunk_header) in block.chunks().iter_deprecated().enumerate() {
             let shard_id = shard_layout.get_shard_id(shard_index).unwrap();

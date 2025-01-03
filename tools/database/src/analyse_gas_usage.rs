@@ -220,7 +220,8 @@ fn get_gas_usage_in_block(
 ) -> GasUsageStats {
     let block_info = epoch_manager.get_block_info(block.hash()).unwrap();
     let epoch_id = block_info.epoch_id();
-    let shard_layout = epoch_manager.get_shard_layout(epoch_id).unwrap();
+    let protocol_version = epoch_manager.get_epoch_info(&epoch_id).unwrap().protocol_version();
+    let shard_layout = epoch_manager.get_shard_layout(protocol_version);
 
     let mut result = GasUsageStats::new();
 

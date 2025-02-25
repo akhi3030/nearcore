@@ -996,17 +996,26 @@ impl RuntimeAdapter for KeyValueRuntime {
         Ok(self.tries.get_view_trie_for_shard(ShardUId::new(0, shard_id), state_root))
     }
 
-    fn validate_tx(
+    fn validate_tx_metadata(
         &self,
         _gas_price: Balance,
-        _state_update: Option<StateRoot>,
         _transaction: &SignedTransaction,
-        _verify_signature: bool,
         _epoch_id: &EpochId,
         _current_protocol_version: ProtocolVersion,
         _receiver_congestion_info: Option<ExtendedCongestionInfo>,
-    ) -> Result<Option<InvalidTxError>, Error> {
-        Ok(None)
+    ) -> Result<(), InvalidTxError> {
+        Ok(())
+    }
+
+    fn validate_tx_against_account(
+        &self,
+        _gas_price: Balance,
+        _state_root: StateRoot,
+        _transaction: &SignedTransaction,
+        _epoch_id: &EpochId,
+        _current_protocol_version: ProtocolVersion,
+    ) -> Result<(), InvalidTxError> {
+        Ok(())
     }
 
     fn prepare_transactions(

@@ -425,23 +425,26 @@ pub trait RuntimeAdapter: Send + Sync {
 
     fn get_flat_storage_manager(&self) -> FlatStorageManager;
 
-    /// Validates a given signed transaction.
-    /// If the state root is given, then the verification will use the account. Otherwise it will
-    /// only validate the transaction math, limits and signatures.
-    /// Returns an option of `InvalidTxError`, it contains `Some(InvalidTxError)` if there is
-    /// a validation error, or `None` in case the transaction succeeded.
-    /// Throws an `Error` with `ErrorKind::StorageError` in case the runtime throws
-    /// `RuntimeError::StorageError`.
-    fn validate_tx(
+    /// Validates a signed transaction's metadata.  In particular, transaction
+    /// maths; limits; and signatures.
+    fn validate_tx_metadata(
         &self,
         gas_price: Balance,
-        state_root: Option<StateRoot>,
         transaction: &SignedTransaction,
-        verify_signature: bool,
         epoch_id: &EpochId,
         current_protocol_version: ProtocolVersion,
         receiver_congestion_info: Option<ExtendedCongestionInfo>,
-    ) -> Result<Option<InvalidTxError>, Error>;
+    ) -> Result<(), InvalidTxError>;
+
+    /// Validates a signed transaction against the account.
+    fn validate_tx_against_account(
+        &self,
+        gas_price: Balance,
+        state_root: StateRoot,
+        transaction: &SignedTransaction,
+        epoch_id: &EpochId,
+        current_protocol_version: ProtocolVersion,
+    ) -> Result<(), InvalidTxError>;
 
     /// Returns an ordered list of valid transactions from the pool up the given limits.
     /// Pulls transactions from the given pool iterators one by one. Validates each transaction

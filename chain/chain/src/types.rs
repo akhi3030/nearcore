@@ -28,6 +28,7 @@ use near_primitives::shard_layout::ShardUId;
 use near_primitives::state::PartialState;
 use near_primitives::state_part::PartId;
 use near_primitives::stateless_validation::contract_distribution::ContractUpdates;
+use near_primitives::transaction::SignatureVerifiedSignedTransaction;
 use near_primitives::transaction::{ExecutionOutcomeWithId, SignedTransaction};
 use near_primitives::types::validator_stake::{ValidatorStake, ValidatorStakeIter};
 use near_primitives::types::{
@@ -432,17 +433,17 @@ pub trait RuntimeAdapter: Send + Sync {
         &self,
         shard_layout: &ShardLayout,
         gas_price: Balance,
-        transaction: &SignedTransaction,
+        transaction: SignedTransaction,
         current_protocol_version: ProtocolVersion,
         receiver_congestion_info: Option<ExtendedCongestionInfo>,
-    ) -> Result<(), InvalidTxError>;
+    ) -> Result<SignatureVerifiedSignedTransaction, InvalidTxError>;
 
     fn validate_tx_against_state(
         &self,
         shard_layout: &ShardLayout,
         gas_price: Balance,
         state_root: StateRoot,
-        transaction: &SignedTransaction,
+        transaction: &SignatureVerifiedSignedTransaction,
         current_protocol_version: ProtocolVersion,
     ) -> Result<(), InvalidTxError>;
 

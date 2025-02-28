@@ -40,7 +40,7 @@ use near_primitives::state_record::StateRecord;
 use near_primitives::stateless_validation::contract_distribution::ContractUpdates;
 use near_primitives::transaction::{
     Action, ExecutionMetadata, ExecutionOutcome, ExecutionOutcomeWithId, ExecutionStatus, LogEntry,
-    SignedTransaction, TransferAction,
+    SignatureVerifiedSignedTransaction, SignedTransaction, TransferAction,
 };
 use near_primitives::trie_key::{GlobalContractCodeIdentifier, TrieKey};
 use near_primitives::types::{
@@ -289,8 +289,15 @@ impl Runtime {
         transactions
             .par_iter()
             .map(move |tx| {
-                let cost_result =
-                    validate_transaction(config, gas_price, tx, true, current_protocol_version);
+                let cost_result = match SignatureVerifiedSignedTransaction::new(tx.clone()) {
+                    Some(sig_verified_tx) => validate_transaction(
+                        config,
+                        gas_price,
+                        &sig_verified_tx,
+                        current_protocol_version,
+                    ),
+                    None => Err(InvalidTxError::InvalidSignature),
+                };
                 (tx, cost_result)
             })
             .collect()

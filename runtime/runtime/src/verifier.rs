@@ -11,10 +11,10 @@ use near_primitives::errors::{
     ActionsValidationError, InvalidAccessKeyError, InvalidTxError, ReceiptValidationError,
 };
 use near_primitives::receipt::{ActionReceipt, DataReceipt, Receipt, ReceiptEnum};
-use near_primitives::transaction::DeleteAccountAction;
 use near_primitives::transaction::{
     Action, AddKeyAction, DeployContractAction, FunctionCallAction, SignedTransaction, StakeAction,
 };
+use near_primitives::transaction::{DeleteAccountAction, SignatureVerifiedSignedTransaction};
 use near_primitives::types::{AccountId, Balance};
 use near_primitives::types::{BlockHeight, StorageUsage};
 use near_primitives::version::ProtocolFeature;
@@ -89,24 +89,16 @@ fn is_zero_balance_account(account: &Account) -> bool {
 pub fn validate_transaction(
     config: &RuntimeConfig,
     gas_price: Balance,
-    signed_transaction: &SignedTransaction,
-    verify_signature: bool,
+    transaction: &SignatureVerifiedSignedTransaction,
     current_protocol_version: ProtocolVersion,
 ) -> Result<TransactionCost, InvalidTxError> {
+    let signed_transaction = transaction.get_tx();
     // Don't allow V1 currently. This will be changed when the new protocol version is introduced.
     if matches!(signed_transaction.transaction, near_primitives::transaction::Transaction::V1(_)) {
         return Err(InvalidTxError::InvalidTransactionVersion);
     }
     let transaction = &signed_transaction.transaction;
     let signer_id = transaction.signer_id();
-
-    if verify_signature
-        && !signed_transaction
-            .signature
-            .verify(signed_transaction.get_hash().as_ref(), transaction.public_key())
-    {
-        return Err(InvalidTxError::InvalidSignature);
-    }
 
     let transaction_size = signed_transaction.get_size();
     let max_transaction_size = config.wasm_config.limit_config.max_transaction_size;
@@ -752,7 +744,13 @@ mod tests {
         signed_transaction: &SignedTransaction,
         expected_err: InvalidTxError,
     ) {
-        match validate_transaction(config, gas_price, signed_transaction, true, PROTOCOL_VERSION) {
+        let Some(sig_verified_tx) =
+            SignatureVerifiedSignedTransaction::new(signed_transaction.clone())
+        else {
+            assert_eq!(expected_err, InvalidTxError::InvalidSignature);
+            return;
+        };
+        match validate_transaction(config, gas_price, &sig_verified_tx, PROTOCOL_VERSION) {
             Ok(cost) => {
                 // Validation passed, now verification should fail with expected_err
                 let err = verify_and_charge_transaction(
@@ -781,13 +779,13 @@ mod tests {
         block_height: Option<BlockHeight>,
         current_protocol_version: ProtocolVersion,
     ) -> Result<VerificationResult, InvalidTxError> {
-        let transaction_cost = validate_transaction(
-            config,
-            gas_price,
-            signed_transaction,
-            true,
-            current_protocol_version,
-        )?;
+        let Some(sig_verified_tx) =
+            SignatureVerifiedSignedTransaction::new(signed_transaction.clone())
+        else {
+            return Err(InvalidTxError::InvalidSignature);
+        };
+        let transaction_cost =
+            validate_transaction(config, gas_price, &sig_verified_tx, current_protocol_version)?;
         verify_and_charge_transaction(
             config,
             state_update,
@@ -1560,7 +1558,8 @@ mod tests {
             wasm_config.limit_config.max_transaction_size = transaction_size - 1;
         }
 
-        let err = validate_transaction(&config, gas_price, &transaction, false, PROTOCOL_VERSION)
+        let sig_verified_tx = SignatureVerifiedSignedTransaction::new(tx).unwrap();
+        let err = validate_transaction(&config, gas_price, &sig_verified_tx, PROTOCOL_VERSION)
             .expect_err("expected validation error - size exceeded");
         assert_eq!(
             err,

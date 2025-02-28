@@ -15,7 +15,9 @@ use near_primitives::receipt::Receipt;
 use near_primitives::runtime::migration_data::{MigrationData, MigrationFlags};
 use near_primitives::state::FlatStateValue;
 use near_primitives::test_utils::MockEpochInfoProvider;
-use near_primitives::transaction::{ExecutionStatus, SignedTransaction};
+use near_primitives::transaction::{
+    ExecutionStatus, SignatureVerifiedSignedTransaction, SignedTransaction,
+};
 use near_primitives::types::{Gas, MerkleHash};
 use near_primitives::version::{PROTOCOL_VERSION, ProtocolFeature};
 use near_store::adapter::{StoreAdapter, StoreUpdateAdapter};
@@ -450,15 +452,13 @@ impl Testbed<'_> {
         // but making it too small affects max_depth and thus pessimistic inflation
         let gas_price = 100_000_000;
         let block_height = None;
-        // do a full verification
-        let verify_signature = true;
 
         let clock = GasCost::measure(metric);
+        let sig_verified_tx = SignatureVerifiedSignedTransaction::new(tx.clone()).unwrap();
         let cost = node_runtime::validate_transaction(
             &self.apply_state.config,
             gas_price,
-            tx,
-            verify_signature,
+            &sig_verified_tx,
             PROTOCOL_VERSION,
         )
         .expect("expected no validation error");

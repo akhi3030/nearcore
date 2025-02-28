@@ -33,7 +33,7 @@ use near_primitives::stateless_validation::ChunkProductionKey;
 use near_primitives::stateless_validation::validator_assignment::ChunkValidatorAssignments;
 use near_primitives::transaction::{
     Action, ExecutionMetadata, ExecutionOutcome, ExecutionOutcomeWithId, ExecutionStatus,
-    SignedTransaction, TransferAction,
+    SignatureVerifiedSignedTransaction, SignedTransaction, TransferAction,
 };
 use near_primitives::types::validator_stake::ValidatorStake;
 use near_primitives::types::{
@@ -1003,11 +1003,11 @@ impl RuntimeAdapter for KeyValueRuntime {
         &self,
         _shard_layout: &ShardLayout,
         _gas_price: Balance,
-        _transaction: &SignedTransaction,
+        tx: SignedTransaction,
         _current_protocol_version: ProtocolVersion,
         _receiver_congestion_info: Option<ExtendedCongestionInfo>,
-    ) -> Result<(), InvalidTxError> {
-        Ok(())
+    ) -> Result<SignatureVerifiedSignedTransaction, InvalidTxError> {
+        Ok(SignatureVerifiedSignedTransaction::new(tx).unwrap())
     }
 
     fn validate_tx_against_state(
@@ -1015,7 +1015,7 @@ impl RuntimeAdapter for KeyValueRuntime {
         _shard_layout: &ShardLayout,
         _gas_price: Balance,
         _state_root: StateRoot,
-        _transaction: &SignedTransaction,
+        _transaction: &SignatureVerifiedSignedTransaction,
         _current_protocol_version: ProtocolVersion,
     ) -> Result<(), InvalidTxError> {
         Ok(())

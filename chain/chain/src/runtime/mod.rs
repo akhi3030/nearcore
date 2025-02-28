@@ -25,7 +25,7 @@ use near_primitives::runtime::migration_data::{MigrationData, MigrationFlags};
 use near_primitives::sandbox::state_patch::SandboxStatePatch;
 use near_primitives::shard_layout::{ShardLayout, ShardUId};
 use near_primitives::state_part::PartId;
-use near_primitives::transaction::SignedTransaction;
+use near_primitives::transaction::{SignatureVerifiedSignedTransaction, SignedTransaction};
 use near_primitives::trie_key::TrieKey;
 use near_primitives::types::{
     AccountId, Balance, BlockHeight, EpochHeight, EpochId, EpochInfoProvider, Gas, MerkleHash,
@@ -527,10 +527,10 @@ impl RuntimeAdapter for NightshadeRuntime {
         &self,
         shard_layout: &ShardLayout,
         gas_price: Balance,
-        transaction: &SignedTransaction,
+        transaction: SignedTransaction,
         current_protocol_version: ProtocolVersion,
         receiver_congestion_info: Option<ExtendedCongestionInfo>,
-    ) -> Result<(), InvalidTxError> {
+    ) -> Result<SignatureVerifiedSignedTransaction, InvalidTxError> {
         let runtime_config = self.runtime_config_store.get_config(current_protocol_version);
 
         if let Some(congestion_info) = receiver_congestion_info {
@@ -559,8 +559,13 @@ impl RuntimeAdapter for NightshadeRuntime {
             }
         }
 
-        validate_transaction(runtime_config, gas_price, transaction, true, current_protocol_version)
-            .map(|_cost| ())
+        let Some(sig_verified_tx) = SignatureVerifiedSignedTransaction::new(transaction) else {
+            return Err(InvalidTxError::InvalidSignature);
+        };
+
+        validate_transaction(runtime_config, gas_price, &sig_verified_tx, current_protocol_version)
+            .map(|_cost| ())?;
+        Ok(sig_verified_tx)
     }
 
     fn validate_tx_against_state(
@@ -568,16 +573,16 @@ impl RuntimeAdapter for NightshadeRuntime {
         shard_layout: &ShardLayout,
         gas_price: Balance,
         state_root: StateRoot,
-        transaction: &SignedTransaction,
+        sig_verified_tx: &SignatureVerifiedSignedTransaction,
         current_protocol_version: ProtocolVersion,
     ) -> Result<(), InvalidTxError> {
         let runtime_config = self.runtime_config_store.get_config(current_protocol_version);
+        let transaction = sig_verified_tx.get_tx();
 
         let cost = validate_transaction(
             runtime_config,
             gas_price,
-            transaction,
-            false,
+            sig_verified_tx,
             current_protocol_version,
         )?;
 
@@ -770,23 +775,28 @@ impl RuntimeAdapter for NightshadeRuntime {
                     continue;
                 }
 
-                let verify_result = validate_transaction(
-                    runtime_config,
-                    prev_block.next_gas_price,
-                    &tx,
-                    true,
-                    protocol_version,
-                )
-                .and_then(|cost| {
-                    verify_and_charge_transaction(
-                        runtime_config,
-                        &mut state_update,
-                        &tx,
-                        &cost,
-                        Some(next_block_height),
-                        protocol_version,
-                    )
-                });
+                let verify_result = match SignatureVerifiedSignedTransaction::new(tx.clone()) {
+                    Some(sig_verified_tx) => {
+                        let validate_result = validate_transaction(
+                            runtime_config,
+                            prev_block.next_gas_price,
+                            &sig_verified_tx,
+                            protocol_version,
+                        );
+                        match validate_result {
+                            Ok(cost) => verify_and_charge_transaction(
+                                runtime_config,
+                                &mut state_update,
+                                sig_verified_tx.get_tx(),
+                                &cost,
+                                Some(next_block_height),
+                                protocol_version,
+                            ),
+                            Err(e) => Err(e),
+                        }
+                    }
+                    None => Err(InvalidTxError::InvalidSignature),
+                };
 
                 match verify_result {
                     Ok(cost) => {

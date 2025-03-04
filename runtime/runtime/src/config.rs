@@ -2,7 +2,7 @@
 
 use near_primitives::account::AccessKeyPermission;
 use near_primitives::action::DeployGlobalContractAction;
-use near_primitives::errors::IntegerOverflowError;
+use near_primitives::errors::{IntegerOverflowError, InvalidTxError};
 use near_primitives::version::FIXED_MINIMUM_NEW_RECEIPT_GAS_VERSION;
 use near_primitives_core::types::ProtocolVersion;
 use num_bigint::BigUint;
@@ -252,7 +252,7 @@ pub fn tx_cost(
     transaction: &Transaction,
     gas_price: Balance,
     protocol_version: ProtocolVersion,
-) -> Result<TransactionCost, IntegerOverflowError> {
+) -> Result<TransactionCost, InvalidTxError> {
     let sender_is_receiver = transaction.receiver_id() == transaction.signer_id();
     let fees = &config.fees;
     let mut gas_burnt: Gas = fees.fee(ActionCosts::new_action_receipt).send_fee(sender_is_receiver);

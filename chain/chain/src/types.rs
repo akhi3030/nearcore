@@ -28,6 +28,7 @@ use near_primitives::shard_layout::ShardUId;
 use near_primitives::state::PartialState;
 use near_primitives::state_part::PartId;
 use near_primitives::stateless_validation::contract_distribution::ContractUpdates;
+use near_primitives::transaction::ValidatedTransaction;
 use near_primitives::transaction::{ExecutionOutcomeWithId, SignedTransaction};
 use near_primitives::types::validator_stake::{ValidatorStake, ValidatorStakeIter};
 use near_primitives::types::{
@@ -350,7 +351,7 @@ pub struct ApplyChunkShardContext<'a> {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PreparedTransactions {
     /// Prepared transactions
-    pub transactions: Vec<SignedTransaction>,
+    pub transactions: Vec<ValidatedTransaction>,
     /// Describes which limit was hit when preparing the transactions.
     pub limited_by: Option<PrepareTransactionsLimit>,
     /// May contain partial state that was used to verify transactions when preparing.
@@ -431,10 +432,10 @@ pub trait RuntimeAdapter: Send + Sync {
     fn validate_tx(
         &self,
         shard_layout: &ShardLayout,
-        transaction: &SignedTransaction,
+        transaction: SignedTransaction,
         current_protocol_version: ProtocolVersion,
         receiver_congestion_info: Option<ExtendedCongestionInfo>,
-    ) -> Result<(), InvalidTxError>;
+    ) -> Result<ValidatedTransaction, InvalidTxError>;
 
     /// It is assumed that this function is only called if `validate_tx` was
     /// called successfully earlier. TODO: introduce some type safety to ensure
@@ -445,7 +446,7 @@ pub trait RuntimeAdapter: Send + Sync {
         shard_layout: &ShardLayout,
         gas_price: Balance,
         state_root: StateRoot,
-        transaction: &SignedTransaction,
+        transaction: &ValidatedTransaction,
         current_protocol_version: ProtocolVersion,
     ) -> Result<(), InvalidTxError>;
 

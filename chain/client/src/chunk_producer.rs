@@ -288,7 +288,12 @@ impl ChunkProducer {
             self.produce_invalid_tx_in_chunks,
         );
         let num_filtered_transactions = prepared_transactions.transactions.len();
-        let (tx_root, _) = merklize(&prepared_transactions.transactions);
+        let txs = prepared_transactions
+            .transactions
+            .iter()
+            .map(|tx| tx.get().clone())
+            .collect::<Vec<_>>();
+        let (tx_root, _) = merklize(&txs);
         let outgoing_receipts = ChainStore::get_outgoing_receipts_for_shard_from_store(
             &self.chain,
             self.epoch_manager.as_ref(),
@@ -304,6 +309,11 @@ impl ChunkProducer {
         let gas_used = if self.produce_invalid_chunks { gas_used + 1 } else { gas_used };
 
         let congestion_info = chunk_extra.congestion_info();
+        let txs = prepared_transactions
+            .transactions
+            .iter()
+            .map(|tx| tx.get().clone())
+            .collect::<Vec<_>>();
         let (encoded_chunk, merkle_paths) = ShardsManagerActor::create_encoded_shard_chunk(
             prev_block_hash,
             *chunk_extra.state_root(),
@@ -314,7 +324,7 @@ impl ChunkProducer {
             chunk_extra.gas_limit(),
             chunk_extra.balance_burnt(),
             chunk_extra.validator_proposals().collect(),
-            prepared_transactions.transactions,
+            txs,
             &outgoing_receipts,
             outgoing_receipts_root,
             tx_root,
@@ -408,9 +418,12 @@ impl ChunkProducer {
         };
         // Reintroduce valid transactions back to the pool. They will be removed when the chunk is
         // included into the block.
-        let reintroduced_count = self
-            .sharded_tx_pool
-            .reintroduce_transactions(shard_uid, &prepared_transactions.transactions);
+        let txs = prepared_transactions
+            .transactions
+            .iter()
+            .map(|tx| tx.get().clone())
+            .collect::<Vec<_>>();
+        let reintroduced_count = self.sharded_tx_pool.reintroduce_transactions(shard_uid, &txs);
         if reintroduced_count < prepared_transactions.transactions.len() {
             debug!(target: "client", reintroduced_count, num_tx = prepared_transactions.transactions.len(), "Reintroduced transactions");
         }

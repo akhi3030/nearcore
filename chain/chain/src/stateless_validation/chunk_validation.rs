@@ -31,7 +31,7 @@ use near_primitives::sharding::{ChunkHash, ReceiptProof, ShardChunkHeader};
 use near_primitives::stateless_validation::state_witness::{
     ChunkStateWitness, EncodedChunkStateWitness,
 };
-use near_primitives::transaction::SignedTransaction;
+use near_primitives::transaction::{SignedTransaction, ValidatedTransaction};
 use near_primitives::types::chunk_extra::ChunkExtra;
 use near_primitives::types::{AccountId, ProtocolVersion, ShardId, ShardIndex};
 use near_primitives::utils::compression::CompressedData;
@@ -98,6 +98,10 @@ pub fn validate_prepared_transactions(
 ) -> Result<PreparedTransactions, Error> {
     let parent_block = chain.chain_store().get_block(chunk_header.prev_block_hash())?;
     let last_chunk_transactions_size = borsh::to_vec(last_chunk_transactions)?.len();
+    let transactions = transactions
+        .into_iter()
+        .map(|t| ValidatedTransaction::new(t.clone()).unwrap())
+        .collect::<Vec<_>>();
     runtime_adapter.prepare_transactions(
         storage_config,
         crate::types::PrepareTransactionsChunkContext {
@@ -106,7 +110,7 @@ pub fn validate_prepared_transactions(
             last_chunk_transactions_size,
         },
         (&parent_block).into(),
-        &mut TransactionGroupIteratorWrapper::new(transactions),
+        &mut TransactionGroupIteratorWrapper::new(&transactions),
         &mut chain.transaction_validity_check(parent_block.header().clone()),
         None,
     )

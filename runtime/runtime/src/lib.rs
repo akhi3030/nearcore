@@ -40,7 +40,7 @@ use near_primitives::state_record::StateRecord;
 use near_primitives::stateless_validation::contract_distribution::ContractUpdates;
 use near_primitives::transaction::{
     Action, ExecutionMetadata, ExecutionOutcome, ExecutionOutcomeWithId, ExecutionStatus, LogEntry,
-    SignedTransaction, TransferAction,
+    SignedTransaction, TransferAction, ValidatedTransaction,
 };
 use near_primitives::trie_key::{GlobalContractCodeIdentifier, TrieKey};
 use near_primitives::types::{
@@ -280,21 +280,32 @@ impl Runtime {
     /// transactions paired with their validation results.
     ///
     /// Returns an `Iterator` of `(&SignedTransaction, Result<TransactionCost, InvalidTxError>)`
-    fn parallel_validate_transactions<'a>(
-        config: &'a RuntimeConfig,
+    fn parallel_validate_transactions(
+        config: &RuntimeConfig,
         gas_price: Balance,
-        transactions: &'a [SignedTransaction],
+        transactions: &[SignedTransaction],
         current_protocol_version: ProtocolVersion,
-    ) -> Vec<(&'a SignedTransaction, Result<TransactionCost, InvalidTxError>)> {
+    ) -> Vec<(CryptoHash, Result<(ValidatedTransaction, TransactionCost), InvalidTxError>)> {
         transactions
             .par_iter()
             .map(move |tx| {
-                let cost_result = validate_transaction(config, tx, current_protocol_version)
-                    .and_then(|()| {
-                        tx_cost(config, &tx.transaction, gas_price, current_protocol_version)
-                            .map_err(InvalidTxError::from)
-                    });
-                (tx, cost_result)
+                (
+                    tx.get_hash(),
+                    match validate_transaction(config, tx.clone(), current_protocol_version) {
+                        Ok(validated_tx) => {
+                            match tx_cost(
+                                config,
+                                &tx.transaction,
+                                gas_price,
+                                current_protocol_version,
+                            ) {
+                                Ok(cost) => Ok((validated_tx, cost)),
+                                Err(e) => Err(e),
+                            }
+                        }
+                        Err(e) => Err(e),
+                    },
+                )
             })
             .collect()
     }
@@ -313,7 +324,7 @@ impl Runtime {
     /// In case of an error, returns either `InvalidTxError` if the transaction verification failed
     /// or a `StorageError` wrapped into `RuntimeError`.
     #[instrument(target = "runtime", level = "debug", "process_transaction", skip_all, fields(
-        tx_hash = %signed_transaction.get_hash(),
+        tx_hash = %tx.get().get_hash(),
         gas_burnt = tracing::field::Empty,
         compute_usage = tracing::field::Empty,
     ))]
@@ -321,7 +332,7 @@ impl Runtime {
         &self,
         state_update: &mut TrieUpdate,
         apply_state: &ApplyState,
-        signed_transaction: &SignedTransaction,
+        tx: &ValidatedTransaction,
         transaction_cost: &TransactionCost,
         stats: &mut ChunkApplyStatsV0,
     ) -> Result<(Receipt, ExecutionOutcomeWithId), InvalidTxError> {
@@ -331,7 +342,7 @@ impl Runtime {
         match verify_and_charge_transaction(
             &apply_state.config,
             state_update,
-            signed_transaction,
+            tx,
             transaction_cost,
             Some(apply_state.block_height),
             apply_state.current_protocol_version,
@@ -339,12 +350,12 @@ impl Runtime {
             Ok(verification_result) => {
                 metrics::TRANSACTION_PROCESSED_SUCCESSFULLY_TOTAL.inc();
                 state_update.commit(StateChangeCause::TransactionProcessing {
-                    tx_hash: signed_transaction.get_hash(),
+                    tx_hash: tx.get().get_hash(),
                 });
-                let transaction = &signed_transaction.transaction;
+                let transaction = &tx.get().transaction;
                 let receipt_id = create_receipt_id_from_transaction(
                     apply_state.current_protocol_version,
-                    signed_transaction,
+                    tx.get(),
                     &apply_state.prev_block_hash,
                     &apply_state.block_hash,
                     apply_state.block_height,
@@ -370,7 +381,7 @@ impl Runtime {
                 let gas_burnt = verification_result.gas_burnt;
                 let compute_usage = verification_result.gas_burnt;
                 let outcome = ExecutionOutcomeWithId {
-                    id: signed_transaction.get_hash(),
+                    id: tx.get().get_hash(),
                     outcome: ExecutionOutcome {
                         status: ExecutionStatus::SuccessReceiptId(*receipt.receipt_id()),
                         logs: vec![],
@@ -1686,72 +1697,73 @@ impl Runtime {
     ///
     /// Any transactions that fail to validate (e.g. invalid nonces, unknown signing keys,
     /// insufficient NEAR balance, etc.) will be skipped, producing no receipts.
-    fn process_transactions<'a>(
+    fn process_transactions(
         &self,
-        processing_state: &mut ApplyProcessingReceiptState<'a>,
+        processing_state: &mut ApplyProcessingReceiptState,
         receipt_sink: &mut ReceiptSink,
     ) -> Result<(), RuntimeError> {
         let total = &mut processing_state.total;
         let apply_state = &mut processing_state.apply_state;
         let state_update = &mut processing_state.state_update;
 
-        for (signed_transaction, maybe_cost) in Self::parallel_validate_transactions(
+        for (tx_hash, result) in Self::parallel_validate_transactions(
             &apply_state.config,
             apply_state.gas_price,
             &processing_state.transactions.transactions,
             apply_state.current_protocol_version,
         ) {
-            let tx_hash = signed_transaction.get_hash();
-            let cost = match maybe_cost {
-                Ok(c) => c,
-                Err(e) => {
+            match result {
+                Ok((validated_tx, cost)) => {
+                    let tx_result = self.process_transaction(
+                        state_update,
+                        apply_state,
+                        &validated_tx,
+                        &cost,
+                        &mut processing_state.stats,
+                    );
+                    let (receipt, outcome_with_id) = match tx_result {
+                        Ok(outcome) => outcome,
+                        Err(e) => {
+                            Self::handle_invalid_transaction(
+                                e,
+                                &tx_hash,
+                                processing_state.protocol_version,
+                                "process_transaction error",
+                            )?;
+                            continue;
+                        }
+                    };
+                    if receipt.receiver_id() == validated_tx.get().transaction.signer_id() {
+                        processing_state.local_receipts.push_back(receipt);
+                    } else {
+                        receipt_sink.forward_or_buffer_receipt(
+                            receipt,
+                            apply_state,
+                            state_update,
+                            processing_state.epoch_info_provider,
+                        )?;
+                    }
+                    let compute = outcome_with_id.outcome.compute_usage;
+                    let compute =
+                        compute.expect("`process_transaction` must populate compute usage");
+                    total.add(outcome_with_id.outcome.gas_burnt, compute)?;
+                    if !checked_feature!("stable", ComputeCosts, processing_state.protocol_version)
+                    {
+                        assert_eq!(total.compute, total.gas, "Compute usage must match burnt gas");
+                    }
+                    processing_state.outcomes.push(outcome_with_id);
+                }
+                Err(err) => {
                     Self::handle_invalid_transaction(
-                        e.clone(),
+                        err,
                         &tx_hash,
                         processing_state.protocol_version,
                         "parallel validation error",
                     )?;
-                    continue;
                 }
-            };
-
-            let tx_result = self.process_transaction(
-                state_update,
-                apply_state,
-                signed_transaction,
-                &cost,
-                &mut processing_state.stats,
-            );
-            let (receipt, outcome_with_id) = match tx_result {
-                Ok(outcome) => outcome,
-                Err(e) => {
-                    Self::handle_invalid_transaction(
-                        e,
-                        &tx_hash,
-                        processing_state.protocol_version,
-                        "process_transaction error",
-                    )?;
-                    continue;
-                }
-            };
-            if receipt.receiver_id() == signed_transaction.transaction.signer_id() {
-                processing_state.local_receipts.push_back(receipt);
-            } else {
-                receipt_sink.forward_or_buffer_receipt(
-                    receipt,
-                    apply_state,
-                    state_update,
-                    processing_state.epoch_info_provider,
-                )?;
             }
-            let compute = outcome_with_id.outcome.compute_usage;
-            let compute = compute.expect("`process_transaction` must populate compute usage");
-            total.add(outcome_with_id.outcome.gas_burnt, compute)?;
-            if !checked_feature!("stable", ComputeCosts, processing_state.protocol_version) {
-                assert_eq!(total.compute, total.gas, "Compute usage must match burnt gas");
-            }
-            processing_state.outcomes.push(outcome_with_id);
         }
+
         processing_state.metrics.tx_processing_done(total.gas, total.compute);
         Ok(())
     }

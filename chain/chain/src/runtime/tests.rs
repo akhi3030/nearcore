@@ -1578,7 +1578,8 @@ fn generate_transaction_pool(signers: &Vec<Signer>, block_hash: CryptoHash) -> T
                 round.try_into().unwrap(),
                 block_hash,
             );
-            transactions.push(transaction);
+            let tx = ValidatedTransaction::new(transaction).unwrap();
+            transactions.push(tx);
         }
     }
     transactions.shuffle(&mut rng);

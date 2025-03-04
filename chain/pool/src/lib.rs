@@ -7,7 +7,7 @@ use near_crypto::PublicKey;
 use near_o11y::metrics::prometheus::core::{AtomicI64, GenericGauge};
 use near_primitives::epoch_info::RngSeed;
 use near_primitives::hash::{CryptoHash, hash};
-use near_primitives::transaction::SignedTransaction;
+use near_primitives::transaction::ValidatedTransaction;
 use near_primitives::types::AccountId;
 use std::ops::Bound;
 
@@ -29,7 +29,7 @@ pub struct TransactionPool {
     /// Transactions are grouped by a pair of (account ID, signer public key).
     /// NOTE: It's more efficient on average to keep transactions unsorted and with potentially
     /// conflicting nonce than to create a BTreeMap for every transaction.
-    transactions: BTreeMap<PoolKey, Vec<SignedTransaction>>,
+    transactions: BTreeMap<PoolKey, Vec<ValidatedTransaction>>,
     /// Set of all hashes to quickly check if the given transaction is in the pool.
     unique_transactions: HashSet<CryptoHash>,
     /// A uniquely generated key seed to randomize PoolKey order.
@@ -80,11 +80,8 @@ impl TransactionPool {
 
     /// Inserts a signed transaction that passed validation into the pool.
     #[must_use]
-    pub fn insert_transaction(
-        &mut self,
-        signed_transaction: SignedTransaction,
-    ) -> InsertTransactionResult {
-        if !self.unique_transactions.insert(signed_transaction.get_hash()) {
+    pub fn insert_transaction(&mut self, tx: ValidatedTransaction) -> InsertTransactionResult {
+        if !self.unique_transactions.insert(tx.get().get_hash()) {
             // The hash of this transaction was already seen, skip it.
             return InsertTransactionResult::Duplicate;
         }
@@ -93,7 +90,7 @@ impl TransactionPool {
         // to catch a logic error in estimation of transaction size.
         let new_total_transaction_size = self
             .total_transaction_size
-            .checked_add(signed_transaction.get_size())
+            .checked_add(tx.get().get_size())
             .expect("Total transaction size is too large");
         if let Some(limit) = self.total_transaction_size_limit {
             if new_total_transaction_size > limit {
@@ -103,12 +100,12 @@ impl TransactionPool {
 
         // At this point transaction is accepted to the pool.
         self.total_transaction_size = new_total_transaction_size;
-        let signer_id = signed_transaction.transaction.signer_id();
-        let signer_public_key = signed_transaction.transaction.public_key();
+        let signer_id = tx.get().transaction.signer_id();
+        let signer_public_key = tx.get().transaction.public_key();
         self.transactions
             .entry(self.key(signer_id, signer_public_key))
             .or_insert_with(Vec::new)
-            .push(signed_transaction);
+            .push(tx);
 
         self.transaction_pool_count_metric.inc();
         self.transaction_pool_size_metric.set(self.total_transaction_size as i64);
@@ -126,32 +123,32 @@ impl TransactionPool {
     ///
     /// In practice, used to evict transactions that have already been included into the block or
     /// became invalid.
-    pub fn remove_transactions(&mut self, transactions: &[SignedTransaction]) {
+    pub fn remove_transactions(&mut self, transactions: &[ValidatedTransaction]) {
         let mut grouped_transactions = HashMap::new();
         for tx in transactions {
             // If transaction is not present in the pool, skip it.
-            if !self.unique_transactions.remove(&tx.get_hash()) {
+            if !self.unique_transactions.remove(&tx.get().get_hash()) {
                 continue;
             }
 
-            let signer_id = tx.transaction.signer_id();
-            let signer_public_key = tx.transaction.public_key();
+            let signer_id = tx.get().transaction.signer_id();
+            let signer_public_key = tx.get().transaction.public_key();
             grouped_transactions
                 .entry(self.key(signer_id, signer_public_key))
                 .or_insert_with(HashSet::new)
-                .insert(tx.get_hash());
+                .insert(tx.get().get_hash());
         }
         for (key, hashes) in grouped_transactions {
             if let Entry::Occupied(mut entry) = self.transactions.entry(key) {
                 entry.get_mut().retain(|tx| {
-                    if !hashes.contains(&tx.get_hash()) {
+                    if !hashes.contains(&tx.get().get_hash()) {
                         return true;
                     }
                     // See the comment above where we increase the size for reasoning why panicking
                     // here catches a logic error.
                     self.total_transaction_size = self
                         .total_transaction_size
-                        .checked_sub(tx.get_size())
+                        .checked_sub(tx.get().get_size())
                         .expect("Total transaction size dropped below zero");
                     false
                 });
@@ -230,7 +227,7 @@ impl<'a> TransactionGroupIterator for PoolIteratorWrapper<'a> {
             self.pool.last_used_key = key;
             let mut transactions =
                 self.pool.transactions.remove(&key).expect("just checked existence");
-            transactions.sort_by_key(|st| std::cmp::Reverse(st.transaction.nonce()));
+            transactions.sort_by_key(|tx| std::cmp::Reverse(tx.get().transaction.nonce()));
             self.sorted_groups.push_back(TransactionGroup {
                 key,
                 transactions,
@@ -302,7 +299,7 @@ pub struct TransactionGroupIteratorWrapper {
 }
 
 impl TransactionGroupIteratorWrapper {
-    pub fn new(transactions: &[SignedTransaction]) -> Self {
+    pub fn new(transactions: &[ValidatedTransaction]) -> Self {
         let groups = transactions
             .iter()
             .map(|transaction| TransactionGroup {
@@ -334,6 +331,7 @@ mod tests {
     use super::*;
     use std::sync::Arc;
 
+    use near_primitives::transaction::SignedTransaction;
     use rand::seq::SliceRandom;
     use rand::thread_rng;
 
@@ -349,26 +347,27 @@ mod tests {
         signer_seed: &str,
         starting_nonce: u64,
         end_nonce: u64,
-    ) -> Vec<SignedTransaction> {
+    ) -> Vec<ValidatedTransaction> {
         let signer_id: AccountId = signer_id.parse().unwrap();
         let signer =
             Arc::new(InMemorySigner::from_seed(signer_id.clone(), KeyType::ED25519, signer_seed));
         (starting_nonce..=end_nonce)
             .map(|i| {
-                SignedTransaction::send_money(
+                let tx = SignedTransaction::send_money(
                     i,
                     signer_id.clone(),
                     "bob.near".parse().unwrap(),
                     &*signer,
                     i as Balance,
                     CryptoHash::default(),
-                )
+                );
+                ValidatedTransaction::new(tx).unwrap()
             })
             .collect()
     }
 
     fn process_txs_to_nonces(
-        mut transactions: Vec<SignedTransaction>,
+        mut transactions: Vec<ValidatedTransaction>,
         expected_weight: u32,
     ) -> (Vec<u64>, TransactionPool) {
         let mut pool = TransactionPool::new(TEST_SEED, None, "");
@@ -380,7 +379,7 @@ mod tests {
         (
             prepare_transactions(&mut pool, expected_weight)
                 .iter()
-                .map(|tx| tx.transaction.nonce())
+                .map(|tx| tx.get().transaction.nonce())
                 .collect(),
             pool,
         )
@@ -397,7 +396,7 @@ mod tests {
     fn prepare_transactions(
         pool: &mut TransactionPool,
         max_number_of_transactions: u32,
-    ) -> Vec<SignedTransaction> {
+    ) -> Vec<ValidatedTransaction> {
         let mut res = vec![];
         let mut pool_iter = pool.pool_iterator();
         while res.len() < max_number_of_transactions as usize {
@@ -454,8 +453,10 @@ mod tests {
         let (mut nonces, mut pool) = process_txs_to_nonces(transactions, 10);
         sort_pairs(&mut nonces[..6]);
         assert_eq!(nonces, vec![1, 21, 2, 22, 3, 23, 24, 25, 26, 27]);
-        let nonces: Vec<u64> =
-            prepare_transactions(&mut pool, 10).iter().map(|tx| tx.transaction.nonce()).collect();
+        let nonces: Vec<u64> = prepare_transactions(&mut pool, 10)
+            .iter()
+            .map(|tx| tx.get().transaction.nonce())
+            .collect();
         assert_eq!(nonces, vec![28, 29, 30, 31]);
     }
 
@@ -471,14 +472,15 @@ mod tests {
                     KeyType::ED25519,
                     &signer_seed,
                 ));
-                SignedTransaction::send_money(
+                let tx = SignedTransaction::send_money(
                     i,
                     signer_id,
                     "bob.near".parse().unwrap(),
                     &*signer,
                     i as Balance,
                     CryptoHash::default(),
-                )
+                );
+                ValidatedTransaction::new(tx).unwrap()
             })
             .collect::<Vec<_>>();
 
@@ -498,9 +500,9 @@ mod tests {
         assert_eq!(pool.len(), txs_to_check.len());
 
         let mut pool_txs = prepare_transactions(&mut pool, txs_to_check.len() as u32);
-        pool_txs.sort_by_key(|tx| tx.transaction.nonce());
+        pool_txs.sort_by_key(|tx| tx.get().transaction.nonce());
         let mut expected_txs = txs_to_check.to_vec();
-        expected_txs.sort_by_key(|tx| tx.transaction.nonce());
+        expected_txs.sort_by_key(|tx| tx.get().transaction.nonce());
 
         assert_eq!(pool_txs, expected_txs);
     }
@@ -518,7 +520,7 @@ mod tests {
         let mut pool_iter = pool.pool_iterator();
         while let Some(iter) = pool_iter.next() {
             while let Some(tx) = iter.next() {
-                if tx.transaction.nonce() & 1 == 1 {
+                if tx.get().transaction.nonce() & 1 == 1 {
                     res.push(tx);
                     break;
                 }
@@ -527,7 +529,7 @@ mod tests {
         drop(pool_iter);
         assert_eq!(pool.len(), 0);
         assert_eq!(pool.transaction_size(), 0);
-        let mut nonces: Vec<_> = res.into_iter().map(|tx| tx.transaction.nonce()).collect();
+        let mut nonces: Vec<_> = res.into_iter().map(|tx| tx.get().transaction.nonce()).collect();
         sort_pairs(&mut nonces[..4]);
         assert_eq!(nonces, vec![1, 21, 3, 23, 25, 27, 29, 31]);
     }
@@ -561,14 +563,15 @@ mod tests {
             .map(|i| {
                 let signer_id = AccountId::try_from(format!("user_{}", i)).unwrap();
                 let signer = Arc::new(InMemorySigner::test_signer(&signer_id));
-                SignedTransaction::send_money(
+                let tx = SignedTransaction::send_money(
                     i,
                     signer_id,
                     "bob.near".parse().unwrap(),
                     &*signer,
                     i as Balance,
                     CryptoHash::default(),
-                )
+                );
+                ValidatedTransaction::new(tx).unwrap()
             })
             .collect::<Vec<_>>();
         let (mut nonces, mut pool) = process_txs_to_nonces(transactions.clone(), 5);
@@ -585,7 +588,7 @@ mod tests {
         let txs = prepare_transactions(&mut pool, 5);
         assert_eq!(txs.len(), 5);
         nonces.sort();
-        let mut new_nonces = txs.iter().map(|tx| tx.transaction.nonce()).collect::<Vec<_>>();
+        let mut new_nonces = txs.iter().map(|tx| tx.get().transaction.nonce()).collect::<Vec<_>>();
         new_nonces.sort();
         assert_ne!(nonces, new_nonces);
     }
@@ -597,13 +600,13 @@ mod tests {
         let mut total_transaction_size = 0;
         // Adding transactions increases the size.
         for tx in transactions.clone() {
-            total_transaction_size += tx.get_size();
+            total_transaction_size += tx.get().get_size();
             assert_eq!(pool.insert_transaction(tx), InsertTransactionResult::Success);
             assert_eq!(pool.transaction_size(), total_transaction_size);
         }
         // Removing transactions decreases the size.
         for tx in transactions {
-            total_transaction_size -= tx.get_size();
+            total_transaction_size -= tx.get().get_size();
             pool.remove_transactions(&[tx]);
             assert_eq!(pool.transaction_size(), total_transaction_size);
         }
@@ -615,7 +618,7 @@ mod tests {
         let transactions = generate_transactions("alice.near", "alice.near", 1, 100);
         // Each transaction is at least 1 byte in size, so the last transaction will not fit.
         let pool_size_limit =
-            transactions.iter().map(|tx| tx.get_size()).sum::<u64>().checked_sub(1).unwrap();
+            transactions.iter().map(|tx| tx.get().get_size()).sum::<u64>().checked_sub(1).unwrap();
         let mut pool = TransactionPool::new(TEST_SEED, Some(pool_size_limit), "");
         for (i, tx) in transactions.iter().cloned().enumerate() {
             if i + 1 < transactions.len() {

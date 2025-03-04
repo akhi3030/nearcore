@@ -63,7 +63,7 @@ use near_primitives::sharding::{
     StateSyncInfoV1,
 };
 use near_primitives::stateless_validation::ChunkProductionKey;
-use near_primitives::transaction::SignedTransaction;
+use near_primitives::transaction::{SignedTransaction, ValidatedTransaction};
 use near_primitives::types::{AccountId, ApprovalStake, BlockHeight, EpochId, NumBlocks, ShardId};
 use near_primitives::unwrap_or_return;
 use near_primitives::upgrade_schedule::ProtocolUpgradeVotingSchedule;
@@ -409,9 +409,13 @@ impl Client {
                     // By now the chunk must be in store, otherwise the block would have been orphaned
                     let chunk = self.chain.get_chunk(&chunk_header.chunk_hash()).unwrap();
                     let transactions = chunk.transactions();
+                    let transactions = transactions
+                        .into_iter()
+                        .map(|tx| ValidatedTransaction::new(tx.clone()).unwrap())
+                        .collect::<Vec<_>>();
                     self.chunk_producer
                         .sharded_tx_pool
-                        .remove_transactions(shard_uid, transactions);
+                        .remove_transactions(shard_uid, &transactions);
                 }
             }
         }
@@ -2230,15 +2234,18 @@ impl Client {
             cur_block.block_congestion_info().get(&receiver_shard).copied();
         let protocol_version = self.epoch_manager.get_epoch_protocol_version(&epoch_id)?;
 
-        if let Err(err) = self.runtime_adapter.validate_tx(
+        let validated_tx = match self.runtime_adapter.validate_tx(
             &shard_layout,
-            tx,
+            tx.clone(),
             protocol_version,
             receiver_congestion_info,
         ) {
-            debug!(target: "client", tx_hash = ?tx.get_hash(), ?err, "Invalid tx during basic validation");
-            return Ok(ProcessTxResponse::InvalidTx(err));
-        }
+            Ok(t) => t,
+            Err(err) => {
+                debug!(target: "client", tx_hash = ?tx.get_hash(), ?err, "Invalid tx during basic validation");
+                return Ok(ProcessTxResponse::InvalidTx(err));
+            }
+        };
 
         let shard_id = account_id_to_shard_id(
             self.epoch_manager.as_ref(),
@@ -2269,7 +2276,7 @@ impl Client {
                 &shard_layout,
                 gas_price,
                 state_root,
-                tx,
+                &validated_tx,
                 protocol_version,
             ) {
                 debug!(target: "client", ?err, "Invalid tx");
@@ -2280,7 +2287,10 @@ impl Client {
             }
             // Transactions only need to be recorded if the node is a validator.
             if me.is_some() {
-                match self.chunk_producer.sharded_tx_pool.insert_transaction(shard_uid, tx.clone())
+                match self
+                    .chunk_producer
+                    .sharded_tx_pool
+                    .insert_transaction(shard_uid, validated_tx)
                 {
                     InsertTransactionResult::Success => {
                         trace!(target: "client", ?shard_uid, tx_hash = ?tx.get_hash(), "Recorded a transaction.");

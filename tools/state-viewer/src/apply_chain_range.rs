@@ -22,7 +22,7 @@ use near_store::adapter::StoreAdapter;
 use near_store::flat::{BlockInfo, FlatStateChanges, FlatStorageStatus};
 use near_store::{DBCol, Store};
 use nearcore::NightshadeRuntime;
-use node_runtime::SignedValidPeriodTransactions;
+use node_runtime::SignedValidPeriodTransaction;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use std::fs::File;
 use std::io::Write;

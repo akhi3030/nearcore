@@ -3,7 +3,7 @@ use crate::config::{
     total_prepaid_gas, total_prepaid_send_fees,
 };
 use crate::{DelayedReceiptIndices, ValidatorAccountsUpdate};
-use crate::{SignedValidPeriodTransactions, safe_add_balance_apply};
+use crate::{SignedValidPeriodTransaction, safe_add_balance_apply};
 use near_parameters::{ActionCosts, RuntimeConfig};
 use near_primitives::chunk_apply_stats::BalanceStats;
 use near_primitives::errors::{
@@ -182,11 +182,12 @@ fn all_touched_accounts(
     incoming_receipts: &[Receipt],
     yield_timeout_receipts: &[Receipt],
     processed_delayed_receipts: &[Receipt],
-    transactions: SignedValidPeriodTransactions<'_>,
+    transactions: &[SignedValidPeriodTransaction],
     validator_accounts_update: &Option<ValidatorAccountsUpdate>,
 ) -> Result<HashSet<AccountId>, RuntimeError> {
     let mut all_accounts_ids: HashSet<AccountId> = transactions
-        .iter_nonexpired_transactions()
+        .into_iter()
+        .filter_map(|tx| tx.transaction_validity_check_passed.then_some(tx.tx))
         .map(|tx| tx.transaction.signer_id().clone())
         .chain(incoming_receipts.iter().map(|r| r.receiver_id().clone()))
         .chain(yield_timeout_receipts.iter().map(|r| r.receiver_id().clone()))
@@ -280,7 +281,7 @@ pub(crate) fn check_balance(
     incoming_receipts: &[Receipt],
     processed_delayed_receipts: &[Receipt],
     yield_timeout_receipts: &[Receipt],
-    transactions: SignedValidPeriodTransactions<'_>,
+    transactions: &[SignedValidPeriodTransaction],
     outgoing_receipts: &[Receipt],
     stats: &BalanceStats,
 ) -> Result<(), RuntimeError> {

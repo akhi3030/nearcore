@@ -25,7 +25,7 @@ use near_primitives::state_sync::{ReceiptProofResponse, ShardStateSyncResponseHe
 use near_primitives::types::chunk_extra::ChunkExtra;
 use near_primitives::types::{BlockExtra, BlockHeight, ShardId};
 use near_primitives::views::LightClientBlockView;
-use node_runtime::SignedValidPeriodTransactions;
+use node_runtime::SignedValidPeriodTransaction;
 use std::sync::Arc;
 use tracing::{debug, info, warn};
 
@@ -547,7 +547,11 @@ impl<'a> ChainUpdate<'a> {
         } else {
             vec![true; transactions.len()]
         };
-        let transactions = SignedValidPeriodTransactions::new(transactions, &transaction_validity);
+        let transactions = transactions
+            .into_iter()
+            .zip(transaction_validity)
+            .map(|(t, v)| SignedValidPeriodTransaction::new(t, v))
+            .collect::<Vec<_>>();
         let apply_result = self.runtime_adapter.apply_chunk(
             RuntimeStorageConfig::new(chunk_header.prev_state_root(), true),
             ApplyChunkReason::UpdateTrackedShard,
@@ -570,7 +574,7 @@ impl<'a> ChainUpdate<'a> {
                 bandwidth_requests: block.block_bandwidth_requests(),
             },
             &receipts,
-            transactions,
+            &transactions,
         )?;
 
         let (outcome_root, outcome_proofs) =
@@ -682,7 +686,7 @@ impl<'a> ChainUpdate<'a> {
                 block.block_bandwidth_requests(),
             ),
             &[],
-            SignedValidPeriodTransactions::new(&[], &[]),
+            &[],
         )?;
         let flat_storage_manager = self.runtime_adapter.get_flat_storage_manager();
         let store_update = flat_storage_manager.save_flat_state_changes(
